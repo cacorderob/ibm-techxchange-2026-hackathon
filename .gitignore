@@ -1,0 +1,86 @@
+﻿# =============================================================================
+# .gitignore — Infraestructura Terraform + DevSecOps
+# IMPORTANTE: Nunca commitear credenciales, tokens ni archivos de estado
+# =============================================================================
+
+# -------------------------
+# Terraform — Archivos locales
+# -------------------------
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.backup
+*.tfstate.*.backup
+crash.log
+crash.*.log
+
+# Archivos de variables con valores reales (NUNCA commitear)
+*.tfvars
+!*.tfvars.example
+
+# Plan outputs (pueden contener valores sensibles)
+*.tfplan
+*.plan
+
+# Archivos de override locales
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# -------------------------
+# Secretos y credenciales
+# -------------------------
+.env
+.env.*
+*.pem
+*.ppk
+*.key
+*_rsa
+*_rsa.pub
+*.p12
+*.pfx
+credentials
+.aws/credentials
+
+# -------------------------
+# Sistema operativo
+# -------------------------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+*~
+
+# -------------------------
+# IDEs y editores
+# -------------------------
+.vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*.suo
+*.user
+*.iml
+
+# -------------------------
+# Logs y temporales
+# -------------------------
+logs/
+*.log
+tmp/
+temp/
+.tmp/
+
+# -------------------------
+# Dependencias y builds
+# -------------------------
+node_modules/
+__pycache__/
+*.pyc

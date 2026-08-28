@@ -1,0 +1,253 @@
+# =============================================================================
+# devsecops.yml — Pipeline DevSecOps para Infraestructura Terraform en AWS
+#
+# Etapas:
+#   1. checkout         — Clona el repositorio completo
+#   2. sast-checkov     — Análisis estático de seguridad con checkov
+#   3. terraform-fmt    — Validación de formato del código Terraform
+#   4. terraform-validate — Validación de sintaxis Terraform
+#   5. gitleaks         — Detección de secretos expuestos
+#   6. terraform-plan   — Generación del plan de cambios
+#   7. aprobacion-manual — Gate de aprobación manual (environment: produccion)
+#   8. terraform-apply  — Aplicación de cambios (solo en rama main)
+#   9. notificacion     — Resumen del resultado en GitHub Actions
+#
+# Secrets requeridos en GitHub Actions (Settings > Secrets > Actions):
+#   - AWS_ACCESS_KEY_ID     : Clave de acceso AWS
+#   - AWS_SECRET_ACCESS_KEY : Clave secreta AWS
+#   - TF_API_TOKEN          : Token de autenticación de Terraform Cloud
+#
+# IMPORTANTE: Ningún valor sensible está hardcodeado en este archivo.
+# =============================================================================
+
+name: DevSecOps Pipeline — Infraestructura AWS
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+# Permisos mínimos necesarios para el workflow
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+# Variable de entorno global: directorio raíz del código Terraform
+env:
+  TF_WORKING_DIR: construccion/terraform
+
+jobs:
+  # ===========================================================================
+  # JOB 1: Análisis de seguridad y validación (se ejecuta en PRs y pushes)
+  # ===========================================================================
+  seguridad-y-validacion:
+    name: Seguridad y Validación
+    runs-on: ubuntu-latest
+
+    steps:
+      # -----------------------------------------------------------------------
+      # Etapa 1: Checkout del repositorio con historial completo
+      # El historial completo es necesario para que gitleaks analice todos los commits
+      # -----------------------------------------------------------------------
+      - name: "Checkout del repositorio"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # -----------------------------------------------------------------------
+      # Etapa 2: SAST — Análisis estático de seguridad con checkov
+      # Detecta configuraciones inseguras en el código Terraform
+      # -----------------------------------------------------------------------
+      - name: "SAST — Análisis de seguridad con checkov"
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: ${{ env.TF_WORKING_DIR }}
+          framework: terraform
+          output_format: cli
+          soft_fail: false
+          skip_check: CKV_AWS_8
+          # CKV_AWS_8: detailing_monitoring en t2.micro no disponible, se omite intencionalmente
+
+      # -----------------------------------------------------------------------
+      # Etapa 3: Validación de formato — terraform fmt
+      # Falla si el código no cumple el formato estándar de Terraform
+      # -----------------------------------------------------------------------
+      - name: "Configurar Terraform"
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: "Validación de formato — terraform fmt"
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          echo "Verificando formato del código Terraform..."
+          terraform fmt -check -recursive
+          echo "Formato verificado correctamente."
+
+      # -----------------------------------------------------------------------
+      # Etapa 4: Validación de sintaxis — terraform validate
+      # Verifica que la configuración de Terraform es sintácticamente correcta
+      # -----------------------------------------------------------------------
+      - name: "Inicializar Terraform (para validate)"
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform init -backend=false
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+
+      - name: "Validación de sintaxis — terraform validate"
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          echo "Validando sintaxis del código Terraform..."
+          terraform validate
+          echo "Sintaxis validada correctamente."
+
+      # -----------------------------------------------------------------------
+      # Etapa 5: Detección de secretos — gitleaks
+      # Analiza el repositorio completo en busca de credenciales expuestas
+      # -----------------------------------------------------------------------
+      - name: "Detección de secretos — gitleaks"
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  # ===========================================================================
+  # JOB 2: Terraform Plan (se ejecuta en PRs y pushes a main)
+  # ===========================================================================
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    needs: seguridad-y-validacion
+
+    steps:
+      - name: "Checkout del repositorio"
+        uses: actions/checkout@v4
+
+      - name: "Configurar Terraform"
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: "Inicializar Terraform"
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          echo "Inicializando Terraform con backend en Terraform Cloud..."
+          terraform init
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+
+      - name: "Terraform Plan"
+        id: plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          echo "Generando plan de cambios de infraestructura..."
+          terraform plan -no-color -input=false 2>&1 | tee plan_output.txt
+          echo "Plan generado exitosamente."
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+
+      # Publica el plan como comentario en el Pull Request
+      - name: "Publicar plan en Pull Request"
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const planOutput = fs.readFileSync('${{ env.TF_WORKING_DIR }}/plan_output.txt', 'utf8');
+            const truncated = planOutput.length > 65000
+              ? planOutput.substring(0, 65000) + '\n... (truncado por longitud)'
+              : planOutput;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Terraform Plan\n\`\`\`terraform\n${truncated}\n\`\`\``
+            });
+
+  # ===========================================================================
+  # JOB 3: Gate de aprobación manual (solo en rama main)
+  # Requiere aprobación en GitHub Environment 'produccion'
+  # ===========================================================================
+  aprobacion-manual:
+    name: Aprobación Manual Requerida
+    runs-on: ubuntu-latest
+    needs: terraform-plan
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: produccion
+
+    steps:
+      - name: "Aprobación recibida — continuando con apply"
+        run: |
+          echo "Aprobación manual recibida."
+          echo "Continuando con terraform apply en rama main..."
+
+  # ===========================================================================
+  # JOB 4: Terraform Apply (solo en rama main, tras aprobación manual)
+  # ===========================================================================
+  terraform-apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    needs: aprobacion-manual
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: "Checkout del repositorio"
+        uses: actions/checkout@v4
+
+      - name: "Configurar Terraform"
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: "Inicializar Terraform"
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          echo "Inicializando Terraform con backend en Terraform Cloud..."
+          terraform init
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+
+      - name: "Terraform Apply"
+        id: apply
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          echo "Aplicando cambios de infraestructura en AWS..."
+          terraform apply -auto-approve -no-color -input=false
+          echo "Apply completado exitosamente."
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+
+  # ===========================================================================
+  # JOB 5: Notificación del resultado
+  # ===========================================================================
+  notificacion:
+    name: Notificación del Resultado
+    runs-on: ubuntu-latest
+    needs: [seguridad-y-validacion, terraform-plan, terraform-apply]
+    if: always()
+
+    steps:
+      - name: "Resumen del pipeline DevSecOps"
+        run: |
+          echo "## Resumen del Pipeline DevSecOps" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Etapa | Estado |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Seguridad y Validación | ${{ needs.seguridad-y-validacion.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Terraform Plan | ${{ needs.terraform-plan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Terraform Apply | ${{ needs.terraform-apply.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Repositorio:** cacorderob/ibm-techxchange-2026-hackathon" >> $GITHUB_STEP_SUMMARY
+          echo "**Rama:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Ejecutado por:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY

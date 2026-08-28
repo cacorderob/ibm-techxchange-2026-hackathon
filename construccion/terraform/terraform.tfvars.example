@@ -1,0 +1,78 @@
+# =============================================================================
+# terraform.tfvars.example — Archivo de ejemplo de variables
+#
+# ⚠️  IMPORTANTE: Este archivo es SOLO UN EJEMPLO con valores ficticios.
+#     NUNCA copies este archivo a terraform.tfvars con valores reales.
+#     NUNCA commitees un archivo terraform.tfvars al repositorio.
+#
+#     Los valores reales deben configurarse como variables en el workspace
+#     'hackaton' de Terraform Cloud (app.terraform.io).
+#     Ver: /operacion/guia_terraform_cloud.md
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Variables generales del proyecto
+# -----------------------------------------------------------------------------
+
+# Región de AWS donde se crearán todos los recursos
+aws_region = "us-east-1"
+
+# Nombre del proyecto (se usa en nombres de recursos y tags)
+project_name = "ibm-techxchange-2026"
+
+# Nombre del ambiente (dev, staging, prod, hackaton)
+environment = "hackaton"
+
+# Responsable de los recursos (se usa en el tag Owner)
+owner = "cacorderob"
+
+# -----------------------------------------------------------------------------
+# Variables de red
+# Dejar vacíos para usar la VPC y subnets por defecto de AWS en us-east-1
+# -----------------------------------------------------------------------------
+
+# ID de la VPC (dejar vacío para usar la VPC por defecto)
+# vpc_id = "vpc-0123456789abcdef0"
+
+# ID de la subnet pública para EC2 (dejar vacío para usar la primera por defecto)
+# subnet_id = "subnet-0123456789abcdef0"
+
+# IDs de subnets para RDS (dejar vacío para usar todas las subnets por defecto)
+# db_subnet_ids = ["subnet-0123456789abcdef0", "subnet-abcdef0123456789"]
+
+# -----------------------------------------------------------------------------
+# Variables de EC2
+# -----------------------------------------------------------------------------
+
+# Tipo de instancia EC2
+instance_type = "t2.micro"
+
+# CIDR permitido para RDP (puerto 3389) — reemplazar con tu IP real
+# Ejemplo: "203.0.113.10/32" para una IP específica
+# Ejemplo: "10.0.0.0/8" para una red privada
+# NUNCA usar "0.0.0.0/0" — no está permitido por la validación del módulo
+allowed_rdp_cidr = "203.0.113.10/32"
+
+# Contenido de la clave pública SSH para el key pair
+# ⚠️  VALOR SENSIBLE — Configurar en Terraform Cloud como variable sensible
+# Ejemplo de formato (reemplazar con tu clave pública real):
+# public_key_content = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC... usuario@equipo"
+
+# -----------------------------------------------------------------------------
+# Variables de RDS
+# -----------------------------------------------------------------------------
+
+# Tipo de instancia RDS
+db_instance_class = "db.t3.micro"
+
+# Versión del motor SQL Server Express
+engine_version = "15.00.4153.1.v1"
+
+# Usuario administrador de la base de datos
+# ⚠️  VALOR SENSIBLE — Configurar en Terraform Cloud como variable sensible
+# db_username = "adminusuario"
+
+# Contraseña del administrador de la base de datos
+# ⚠️  VALOR SENSIBLE — Mínimo 8 caracteres
+#                      Configurar en Terraform Cloud como variable sensible
+# db_password = "Contrasena-Segura-2024!"
