@@ -1,7 +1,8 @@
 # =============================================================================
 # Módulo: ec2-windows
 # Descripción: Aprovisiona una instancia EC2 con Windows Server 2022 en AWS
-# Recursos: aws_instance, aws_security_group, aws_key_pair, data aws_ami
+# Recursos: aws_instance, aws_security_group, data aws_ami
+# Acceso: RDP con usuario/contraseña de administrador de Windows (no SSH)
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -26,18 +27,6 @@ data "aws_ami" "windows_server_2022" {
     name   = "state"
     values = ["available"]
   }
-}
-
-# -----------------------------------------------------------------------------
-# Key Pair: creado por Terraform usando la clave pública provista como variable
-# trimspace() elimina espacios y saltos de línea que puedan venir de la variable
-# La clave privada NUNCA se almacena en el repositorio ni en Terraform Cloud
-# -----------------------------------------------------------------------------
-resource "aws_key_pair" "ec2_keypair" {
-  key_name   = "${var.project_name}-${var.environment}-keypair"
-  public_key = trimspace(var.public_key_content)
-
-  tags = local.common_tags
 }
 
 # -----------------------------------------------------------------------------
@@ -95,7 +84,6 @@ resource "aws_vpc_security_group_egress_rule" "all_outbound" {
 resource "aws_instance" "windows" {
   ami                         = data.aws_ami.windows_server_2022.id
   instance_type               = var.instance_type
-  key_name                    = aws_key_pair.ec2_keypair.key_name
   vpc_security_group_ids      = [aws_security_group.ec2_sg.id]
   subnet_id                   = var.subnet_id
   associate_public_ip_address = true

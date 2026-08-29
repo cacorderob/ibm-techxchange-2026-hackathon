@@ -60,9 +60,8 @@ module "ec2_windows" {
   vpc_id    = local.vpc_id
   subnet_id = local.subnet_id
 
-  # Variables de seguridad (sensibles — provienen de Terraform Cloud)
-  allowed_rdp_cidr   = var.allowed_rdp_cidr
-  public_key_content = var.public_key_content
+  # Variables de seguridad
+  allowed_rdp_cidr = var.allowed_rdp_cidr
 }
 
 # -----------------------------------------------------------------------------

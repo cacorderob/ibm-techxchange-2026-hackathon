@@ -28,11 +28,6 @@ output "ec2_security_group_name" {
   value       = module.ec2_windows.security_group_name
 }
 
-output "ec2_key_pair_name" {
-  description = "Nombre del Key Pair creado en AWS para la instancia EC2."
-  value       = module.ec2_windows.key_pair_name
-}
-
 output "ec2_ami_id" {
   description = "ID de la AMI de Windows Server 2022 utilizada para la instancia."
   value       = module.ec2_windows.ami_id

@@ -43,8 +43,3 @@ variable "allowed_rdp_cidr" {
   }
 }
 
-variable "public_key_content" {
-  description = "Contenido de la clave pública SSH para crear el key pair en AWS. Debe ser una clave pública válida (ej: ssh-rsa AAAA...)."
-  type        = string
-  sensitive   = true
-}

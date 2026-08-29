@@ -68,12 +68,6 @@ variable "allowed_rdp_cidr" {
   type        = string
 }
 
-variable "public_key_content" {
-  description = "Contenido de la clave pública SSH para crear el key pair en AWS. Configurar como variable sensible en Terraform Cloud."
-  type        = string
-  sensitive   = true
-}
-
 # -----------------------------------------------------------------------------
 # Variables de RDS
 # -----------------------------------------------------------------------------

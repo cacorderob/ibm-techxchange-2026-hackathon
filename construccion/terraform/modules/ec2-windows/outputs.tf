@@ -27,11 +27,6 @@ output "security_group_name" {
   value       = aws_security_group.ec2_sg.name
 }
 
-output "key_pair_name" {
-  description = "Nombre del Key Pair creado en AWS para la instancia EC2."
-  value       = aws_key_pair.ec2_keypair.key_name
-}
-
 output "ami_id" {
   description = "ID de la AMI de Windows Server 2022 utilizada para la instancia."
   value       = data.aws_ami.windows_server_2022.id
