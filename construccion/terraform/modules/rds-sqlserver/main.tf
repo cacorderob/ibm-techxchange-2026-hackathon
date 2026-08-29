@@ -41,7 +41,7 @@ resource "aws_vpc_security_group_ingress_rule" "sqlserver_from_ec2" {
 resource "aws_vpc_security_group_egress_rule" "all_outbound" {
   #checkov:skip=CKV_AWS_382: Egreso abierto requerido para el funcionamiento de RDS en entorno de hackathon
   security_group_id = aws_security_group.rds_sg.id
-  description       = "Todo el trafico saliente permitido — requerido para operacion de RDS"
+  description       = "Todo el trafico saliente permitido - requerido para operacion de RDS"
   from_port         = -1
   to_port           = -1
   ip_protocol       = "-1"
@@ -115,8 +115,8 @@ resource "aws_db_instance" "sqlserver" {
   # Protección contra eliminación — deshabilitada para permitir destroy en hackathon
   deletion_protection = false
 
-  # Logs de SQL Server habilitados (error y agent)
-  enabled_cloudwatch_logs_exports = ["error", "agent"]
+  # Logs de SQL Server Express: solo "error" esta soportado en sqlserver-ex 15.00
+  enabled_cloudwatch_logs_exports = ["error"]
 
   # Zona horaria compatible con SQL Server en Windows
   timezone = "Eastern Standard Time"

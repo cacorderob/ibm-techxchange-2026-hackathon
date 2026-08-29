@@ -66,7 +66,7 @@ resource "aws_vpc_security_group_ingress_rule" "rdp" {
 resource "aws_vpc_security_group_egress_rule" "all_outbound" {
   #checkov:skip=CKV_AWS_382: Egreso abierto necesario para actualizaciones del SO y conectividad saliente en entorno de hackathon
   security_group_id = aws_security_group.ec2_sg.id
-  description       = "Todo el trafico saliente permitido — requerido para actualizaciones de Windows"
+  description       = "Todo el trafico saliente permitido - requerido para actualizaciones de Windows"
   from_port         = -1
   to_port           = -1
   ip_protocol       = "-1"
@@ -83,7 +83,7 @@ resource "aws_vpc_security_group_egress_rule" "all_outbound" {
 # -----------------------------------------------------------------------------
 resource "aws_instance" "windows" {
   #checkov:skip=CKV_AWS_88: IP publica requerida para acceso RDP directo en entorno de hackathon
-  #checkov:skip=CKV_AWS_135: t2.micro no soporta EBS optimized — limitacion del tipo de instancia
+  #checkov:skip=CKV_AWS_135: t2.micro no soporta EBS optimized - limitacion del tipo de instancia
   #checkov:skip=CKV2_AWS_41: IAM role no requerido para esta instancia en entorno de hackathon
 
   ami           = data.aws_ami.windows_server_2022.id
