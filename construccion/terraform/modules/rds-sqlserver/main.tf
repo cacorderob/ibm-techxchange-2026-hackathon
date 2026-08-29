@@ -38,8 +38,8 @@ resource "aws_vpc_security_group_ingress_rule" "sqlserver_from_ec2" {
 }
 
 # Regla de egreso: salida requerida para comunicación interna de RDS
-# checkov:skip=CKV_AWS_382: Egreso abierto requerido para el funcionamiento de RDS en entorno de hackathon
 resource "aws_vpc_security_group_egress_rule" "all_outbound" {
+  #checkov:skip=CKV_AWS_382: Egreso abierto requerido para el funcionamiento de RDS en entorno de hackathon
   security_group_id = aws_security_group.rds_sg.id
   description       = "Todo el trafico saliente permitido — requerido para operacion de RDS"
   from_port         = -1
@@ -74,6 +74,12 @@ resource "aws_db_subnet_group" "rds_subnet_group" {
 # - Credenciales NUNCA en código, solo desde variables sensibles
 # -----------------------------------------------------------------------------
 resource "aws_db_instance" "sqlserver" {
+  #checkov:skip=CKV_AWS_157: Multi-AZ deshabilitado intencionalmente en entorno de hackathon
+  #checkov:skip=CKV_AWS_133: Backups deshabilitados intencionalmente en entorno de prueba
+  #checkov:skip=CKV_AWS_293: Deletion protection deshabilitado para permitir terraform destroy en hackathon
+  #checkov:skip=CKV_AWS_353: Performance Insights no disponible para sqlserver-ex en db.t3.micro
+  #checkov:skip=CKV_AWS_118: Enhanced monitoring requiere rol IAM adicional fuera del alcance del hackathon
+
   identifier     = "${var.project_name}-${var.environment}-rds-sqlserver"
   engine         = "sqlserver-ex"
   engine_version = var.engine_version
@@ -96,28 +102,21 @@ resource "aws_db_instance" "sqlserver" {
   publicly_accessible    = false
 
   # Alta disponibilidad — deshabilitada por diseño (hackathon)
-  # checkov:skip=CKV_AWS_157: Multi-AZ deshabilitado intencionalmente en entorno de hackathon
   multi_az = false
 
   # Actualizaciones automáticas de versiones menores habilitadas
   auto_minor_version_upgrade = true
 
   # Mantenimiento y backups
-  # checkov:skip=CKV_AWS_133: Backups deshabilitados intencionalmente en entorno de prueba
   backup_retention_period = 0
   skip_final_snapshot     = true
   copy_tags_to_snapshot   = true
 
   # Protección contra eliminación — deshabilitada para permitir destroy en hackathon
-  # checkov:skip=CKV_AWS_293: Deletion protection deshabilitado para permitir terraform destroy en hackathon
   deletion_protection = false
 
   # Logs de SQL Server habilitados (error y agent)
   enabled_cloudwatch_logs_exports = ["error", "agent"]
-
-  # Performance Insights — no disponible en sqlserver-ex con db.t3.micro
-  # checkov:skip=CKV_AWS_353: Performance Insights no disponible para sqlserver-ex en db.t3.micro
-  # checkov:skip=CKV_AWS_118: Enhanced monitoring requiere rol IAM adicional fuera del alcance del hackathon
 
   # Zona horaria compatible con SQL Server en Windows
   timezone = "Eastern Standard Time"
