@@ -38,7 +38,6 @@ resource "aws_security_group" "ec2_sg" {
   description = "Security group para EC2 Windows - permite RDP restringido"
   vpc_id      = var.vpc_id
 
-  # lifecycle: evita conflictos al recrear reglas
   lifecycle {
     create_before_destroy = true
   }
@@ -63,10 +62,11 @@ resource "aws_vpc_security_group_ingress_rule" "rdp" {
   })
 }
 
-# Regla de egreso: todo el tráfico saliente permitido
+# Regla de egreso: salida a internet requerida para actualizaciones de Windows
+# checkov:skip=CKV_AWS_382: Egreso abierto necesario para actualizaciones del SO y conectividad saliente en entorno de hackathon
 resource "aws_vpc_security_group_egress_rule" "all_outbound" {
   security_group_id = aws_security_group.ec2_sg.id
-  description       = "Todo el trafico saliente permitido"
+  description       = "Todo el trafico saliente permitido — requerido para actualizaciones de Windows"
   from_port         = -1
   to_port           = -1
   ip_protocol       = "-1"
@@ -82,22 +82,37 @@ resource "aws_vpc_security_group_egress_rule" "all_outbound" {
 # La IP pública es asignada por AWS al momento del aprovisionamiento
 # -----------------------------------------------------------------------------
 resource "aws_instance" "windows" {
-  ami                         = data.aws_ami.windows_server_2022.id
-  instance_type               = var.instance_type
+  ami           = data.aws_ami.windows_server_2022.id
+  instance_type = var.instance_type
+
   vpc_security_group_ids      = [aws_security_group.ec2_sg.id]
   subnet_id                   = var.subnet_id
-  associate_public_ip_address = true
+  associate_public_ip_address = true # checkov:skip=CKV_AWS_88: IP publica requerida para acceso RDP directo en entorno de hackathon
+
+  # IMDSv2 obligatorio — previene ataques SSRF contra el metadata service
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+  }
+
+  # Monitoreo detallado habilitado para visibilidad de métricas
+  monitoring = true
 
   # Disco raíz: gp3 para mejor rendimiento y costo
+  # checkov:skip=CKV_AWS_135: t2.micro no soporta EBS optimized — limitacion del tipo de instancia
   root_block_device {
     volume_type           = "gp3"
     volume_size           = 30
     delete_on_termination = true
+    encrypted             = true
 
     tags = merge(local.common_tags, {
       Name = "${var.project_name}-${var.environment}-ec2-windows-root-disk"
     })
   }
+
+  # checkov:skip=CKV2_AWS_41: IAM role no requerido para esta instancia en entorno de hackathon
 
   tags = merge(local.common_tags, {
     Name = "${var.project_name}-${var.environment}-ec2-windows"
