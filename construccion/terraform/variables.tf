@@ -60,7 +60,7 @@ variable "db_subnet_ids" {
 variable "instance_type" {
   description = "Tipo de instancia EC2 para la máquina virtual Windows Server."
   type        = string
-  default     = "t2.micro"
+  default     = "t3.micro"
 }
 
 variable "allowed_rdp_cidr" {

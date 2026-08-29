@@ -18,9 +18,9 @@ variable "owner" {
 }
 
 variable "instance_type" {
-  description = "Tipo de instancia EC2 (ej: t2.micro, t3.small)."
+  description = "Tipo de instancia EC2 (ej: t3.micro, t3.small)."
   type        = string
-  default     = "t2.micro"
+  default     = "t3.micro"
 }
 
 variable "vpc_id" {
