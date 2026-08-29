@@ -5,34 +5,49 @@
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# Security Group: permite acceso a SQL Server (1433) solo desde el SG de EC2
-# Principio de mínimo privilegio: la RDS no es accesible desde internet
+# Security Group: base — sin reglas inline para compatibilidad con checkov
+# Las reglas se definen en recursos separados aws_vpc_security_group_*_rule
 # -----------------------------------------------------------------------------
 resource "aws_security_group" "rds_sg" {
   name        = "${var.project_name}-${var.environment}-sg-rds"
   description = "Security group para RDS SQL Server - acceso restringido al SG de EC2"
   vpc_id      = var.vpc_id
 
-  # Regla de ingreso: SQL Server (1433) solo desde el Security Group de la EC2
-  ingress {
-    description     = "SQL Server desde Security Group de EC2"
-    from_port       = 1433
-    to_port         = 1433
-    protocol        = "tcp"
-    security_groups = [var.ec2_security_group_id]
-  }
-
-  # Regla de egreso: todo el tráfico saliente permitido
-  egress {
-    description = "Todo el trafico saliente permitido"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+  lifecycle {
+    create_before_destroy = true
   }
 
   tags = merge(local.common_tags, {
     Name = "${var.project_name}-${var.environment}-sg-rds"
+  })
+}
+
+# Regla de ingreso: SQL Server (1433) solo desde el Security Group de la EC2
+# La RDS no es accesible desde internet — principio de mínimo privilegio
+resource "aws_vpc_security_group_ingress_rule" "sqlserver_from_ec2" {
+  security_group_id            = aws_security_group.rds_sg.id
+  description                  = "SQL Server desde Security Group de EC2"
+  from_port                    = 1433
+  to_port                      = 1433
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = var.ec2_security_group_id
+
+  tags = merge(local.common_tags, {
+    Name = "${var.project_name}-${var.environment}-sg-rds-sqlserver-ingress"
+  })
+}
+
+# Regla de egreso: todo el tráfico saliente permitido
+resource "aws_vpc_security_group_egress_rule" "all_outbound" {
+  security_group_id = aws_security_group.rds_sg.id
+  description       = "Todo el trafico saliente permitido"
+  from_port         = -1
+  to_port           = -1
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
+
+  tags = merge(local.common_tags, {
+    Name = "${var.project_name}-${var.environment}-sg-rds-all-egress"
   })
 }
 
@@ -52,7 +67,7 @@ resource "aws_db_subnet_group" "rds_subnet_group" {
 
 # -----------------------------------------------------------------------------
 # Instancia RDS: SQL Server Express Edition
-# - Motor: sqlserver-ex (Express, incluye licencia, sin costo adicional de licencia)
+# - Motor: sqlserver-ex (Express, incluye licencia, sin costo adicional)
 # - Multi-AZ deshabilitado (entorno de prueba/hackathon)
 # - skip_final_snapshot = true (no productivo)
 # - Credenciales NUNCA en código, solo desde variables sensibles

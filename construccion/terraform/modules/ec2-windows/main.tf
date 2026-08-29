@@ -30,44 +30,61 @@ data "aws_ami" "windows_server_2022" {
 
 # -----------------------------------------------------------------------------
 # Key Pair: creado por Terraform usando la clave pública provista como variable
+# trimspace() elimina espacios y saltos de línea que puedan venir de la variable
 # La clave privada NUNCA se almacena en el repositorio ni en Terraform Cloud
 # -----------------------------------------------------------------------------
 resource "aws_key_pair" "ec2_keypair" {
   key_name   = "${var.project_name}-${var.environment}-keypair"
-  public_key = var.public_key_content
+  public_key = trimspace(var.public_key_content)
 
   tags = local.common_tags
 }
 
 # -----------------------------------------------------------------------------
-# Security Group: permite RDP (3389) solo desde el CIDR configurado
-# No se abre a 0.0.0.0/0 — principio de mínimo privilegio
+# Security Group: base — sin reglas inline para compatibilidad con checkov
+# Las reglas se definen en recursos separados aws_vpc_security_group_*_rule
 # -----------------------------------------------------------------------------
 resource "aws_security_group" "ec2_sg" {
   name        = "${var.project_name}-${var.environment}-sg-ec2"
   description = "Security group para EC2 Windows - permite RDP restringido"
   vpc_id      = var.vpc_id
 
-  # Regla de ingreso: RDP (3389) restringido al CIDR configurado por variable
-  ingress {
-    description = "RDP desde CIDR permitido"
-    from_port   = 3389
-    to_port     = 3389
-    protocol    = "tcp"
-    cidr_blocks = [var.allowed_rdp_cidr]
-  }
-
-  # Regla de egreso: todo el tráfico saliente permitido
-  egress {
-    description = "Todo el trafico saliente permitido"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+  # lifecycle: evita conflictos al recrear reglas
+  lifecycle {
+    create_before_destroy = true
   }
 
   tags = merge(local.common_tags, {
     Name = "${var.project_name}-${var.environment}-sg-ec2"
+  })
+}
+
+# Regla de ingreso: RDP (3389) restringido al CIDR configurado por variable
+# No se permite 0.0.0.0/0 — la variable tiene validación en variables.tf
+resource "aws_vpc_security_group_ingress_rule" "rdp" {
+  security_group_id = aws_security_group.ec2_sg.id
+  description       = "RDP desde CIDR permitido"
+  from_port         = 3389
+  to_port           = 3389
+  ip_protocol       = "tcp"
+  cidr_ipv4         = var.allowed_rdp_cidr
+
+  tags = merge(local.common_tags, {
+    Name = "${var.project_name}-${var.environment}-sg-ec2-rdp-ingress"
+  })
+}
+
+# Regla de egreso: todo el tráfico saliente permitido
+resource "aws_vpc_security_group_egress_rule" "all_outbound" {
+  security_group_id = aws_security_group.ec2_sg.id
+  description       = "Todo el trafico saliente permitido"
+  from_port         = -1
+  to_port           = -1
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
+
+  tags = merge(local.common_tags, {
+    Name = "${var.project_name}-${var.environment}-sg-ec2-all-egress"
   })
 }
 
