@@ -1,0 +1,13 @@
+# =============================================================================
+# .gitleaks.toml — Configuración de Gitleaks para exclusiones conocidas
+#
+# Referencia: https://github.com/gitleaks/gitleaks#configuration
+# =============================================================================
+
+title = "Gitleaks config — ibm-techxchange-2026-hackathon"
+
+[allowlist]
+  description = "Archivos de historial exportados de Bob con código de ejemplo"
+  paths = [
+    '''bob-task-.*\.md'''
+  ]

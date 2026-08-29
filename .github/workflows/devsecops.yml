@@ -36,6 +36,9 @@ env:
   TF_WORKING_DIR: construccion/terraform
   TF_CLOUD_ORGANIZATION: GBM-HA-TEST
   TF_WORKSPACE: hackaton
+  # Suprimir advertencia de deprecación de Node 20 en actions que aún no migraron a Node 24
+  # Ref: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
 
 jobs:
   # ===========================================================================
@@ -90,6 +93,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+          GITLEAKS_CONFIG: .gitleaks.toml
 
   # ===========================================================================
   # JOB 2: Notificación del resultado
