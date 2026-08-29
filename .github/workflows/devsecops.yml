@@ -2,20 +2,16 @@
 # devsecops.yml — Pipeline DevSecOps para Infraestructura Terraform en AWS
 #
 # Etapas:
-#   1. checkout         — Clona el repositorio completo
-#   2. sast-checkov     — Análisis estático de seguridad con checkov
-#   3. terraform-fmt    — Validación de formato del código Terraform
-#   4. terraform-validate — Validación de sintaxis Terraform
-#   5. gitleaks         — Detección de secretos expuestos
-#   6. terraform-plan   — Generación del plan de cambios
-#   7. aprobacion-manual — Gate de aprobación manual (environment: produccion)
-#   8. terraform-apply  — Aplicación de cambios (solo en rama main)
-#   9. notificacion     — Resumen del resultado en GitHub Actions
+#   1. sast-checkov     — Análisis estático de seguridad con checkov
+#   2. terraform-fmt    — Validación de formato del código Terraform
+#   3. gitleaks         — Detección de secretos expuestos
+#   4. notificacion     — Resumen del resultado
+#
+# Plan y Apply: ejecutar manualmente desde Terraform Cloud
+#   https://app.terraform.io/app/GBM-HA-TEST/workspaces/hackaton
 #
 # Secrets requeridos en GitHub Actions (Settings > Secrets > Actions):
-#   - AWS_ACCESS_KEY_ID     : Clave de acceso AWS
-#   - AWS_SECRET_ACCESS_KEY : Clave secreta AWS
-#   - TF_API_TOKEN          : Token de autenticación de Terraform Cloud
+#   - TF_API_TOKEN : Token de Terraform Cloud (solo para checkov si aplica)
 #
 # IMPORTANTE: Ningún valor sensible está hardcodeado en este archivo.
 # =============================================================================
@@ -34,7 +30,6 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  id-token: write
 
 # Variables de entorno globales del workflow
 env:
@@ -44,7 +39,7 @@ env:
 
 jobs:
   # ===========================================================================
-  # JOB 1: Análisis de seguridad y validación (se ejecuta en PRs y pushes)
+  # JOB 1: Análisis de seguridad y validación de código
   # ===========================================================================
   seguridad-y-validacion:
     name: Seguridad y Validación
@@ -52,7 +47,7 @@ jobs:
 
     steps:
       # -----------------------------------------------------------------------
-      # Etapa 1: Checkout del repositorio con historial completo
+      # Checkout del repositorio con historial completo
       # El historial completo es necesario para que gitleaks analice todos los commits
       # -----------------------------------------------------------------------
       - name: "Checkout del repositorio"
@@ -61,7 +56,7 @@ jobs:
           fetch-depth: 0
 
       # -----------------------------------------------------------------------
-      # Etapa 2: SAST — Análisis estático de seguridad con checkov
+      # SAST — Análisis estático de seguridad con checkov
       # Detecta configuraciones inseguras en el código Terraform
       # -----------------------------------------------------------------------
       - name: "SAST — Análisis de seguridad con checkov"
@@ -72,16 +67,12 @@ jobs:
           output_format: cli
           soft_fail: false
           skip_check: CKV_AWS_8
-          # CKV_AWS_8: detailing_monitoring en t2.micro no disponible, se omite intencionalmente
 
       # -----------------------------------------------------------------------
-      # Etapa 3: Validación de formato — terraform fmt
-      # Falla si el código no cumple el formato estándar de Terraform
+      # Validación de formato — terraform fmt (sin conexión al backend)
       # -----------------------------------------------------------------------
       - name: "Configurar Terraform"
         uses: hashicorp/setup-terraform@v3
-        with:
-          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
 
       - name: "Validación de formato — terraform fmt"
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -91,25 +82,7 @@ jobs:
           echo "Formato verificado correctamente."
 
       # -----------------------------------------------------------------------
-      # Etapa 4: Validación de sintaxis — terraform validate
-      # Verifica que la configuración de Terraform es sintácticamente correcta
-      # -----------------------------------------------------------------------
-      - name: "Inicializar Terraform (para validate)"
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          terraform init -backend=false
-        env:
-          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
-
-      - name: "Validación de sintaxis — terraform validate"
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          echo "Validando sintaxis del código Terraform..."
-          terraform validate
-          echo "Sintaxis validada correctamente."
-
-      # -----------------------------------------------------------------------
-      # Etapa 5: Detección de secretos — gitleaks
+      # Detección de secretos — gitleaks
       # Analiza el repositorio completo en busca de credenciales expuestas
       # -----------------------------------------------------------------------
       - name: "Detección de secretos — gitleaks"
@@ -119,179 +92,12 @@ jobs:
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
   # ===========================================================================
-  # JOB 2: Terraform Plan — dispara run en Terraform Cloud via API y espera
-  # Terraform Cloud ejecuta el plan internamente usando sus variables/credenciales
-  # ===========================================================================
-  terraform-plan:
-    name: Terraform Plan (via Terraform Cloud)
-    runs-on: ubuntu-latest
-    needs: seguridad-y-validacion
-
-    steps:
-      - name: "Disparar Plan en Terraform Cloud y esperar resultado"
-        run: |
-          TF_TOKEN="${{ secrets.TF_API_TOKEN }}"
-          WS_ID="ws-WvCDrUj6ZALMCowC"
-          ORG="${{ env.TF_CLOUD_ORGANIZATION }}"
-          WS="${{ env.TF_WORKSPACE }}"
-
-          echo "Creando run de plan en Terraform Cloud..."
-
-          RUN_RESPONSE=$(curl -s \
-            --header "Authorization: Bearer ${TF_TOKEN}" \
-            --header "Content-Type: application/vnd.api+json" \
-            --request POST \
-            --data "{
-              \"data\": {
-                \"type\": \"runs\",
-                \"attributes\": {
-                  \"plan-only\": true,
-                  \"message\": \"Plan - GitHub Actions commit ${{ github.sha }}\"
-                },
-                \"relationships\": {
-                  \"workspace\": {
-                    \"data\": { \"type\": \"workspaces\", \"id\": \"${WS_ID}\" }
-                  }
-                }
-              }
-            }" \
-            "https://app.terraform.io/api/v2/runs")
-
-          RUN_ID=$(echo "$RUN_RESPONSE" | jq -r '.data.id')
-
-          if [ "${RUN_ID}" = "null" ] || [ -z "${RUN_ID}" ]; then
-            echo "Error al crear el run: $RUN_RESPONSE"
-            exit 1
-          fi
-
-          echo "Run creado: https://app.terraform.io/app/${ORG}/workspaces/${WS}/runs/${RUN_ID}"
-
-          # Esperar resultado del plan (max 10 min)
-          MAX_WAIT=600
-          ELAPSED=0
-          while [ $ELAPSED -lt $MAX_WAIT ]; do
-            STATUS=$(curl -s \
-              --header "Authorization: Bearer ${TF_TOKEN}" \
-              "https://app.terraform.io/api/v2/runs/${RUN_ID}" \
-              | jq -r '.data.attributes.status')
-
-            echo "Estado: ${STATUS} (${ELAPSED}s)"
-
-            case "${STATUS}" in
-              planned_and_finished|planned)
-                echo "✅ Plan completado: https://app.terraform.io/app/${ORG}/workspaces/${WS}/runs/${RUN_ID}"
-                exit 0 ;;
-              errored|canceled|force_canceled|discarded)
-                echo "❌ Plan fallido — estado: ${STATUS}"
-                echo "Ver detalles: https://app.terraform.io/app/${ORG}/workspaces/${WS}/runs/${RUN_ID}"
-                exit 1 ;;
-              *)
-                sleep 10
-                ELAPSED=$((ELAPSED + 10)) ;;
-            esac
-          done
-          echo "⏱️ Timeout esperando el plan"; exit 1
-
-  # ===========================================================================
-  # JOB 3: Gate de aprobación manual (solo en rama main)
-  # Requiere aprobación en GitHub Environment 'produccion'
-  # ===========================================================================
-  aprobacion-manual:
-    name: Aprobación Manual Requerida
-    runs-on: ubuntu-latest
-    needs: terraform-plan
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment: produccion
-
-    steps:
-      - name: "Aprobación recibida — continuando con apply"
-        run: |
-          echo "Aprobación manual recibida."
-          echo "Continuando con terraform apply en rama main..."
-
-  # ===========================================================================
-  # JOB 4: Terraform Apply — dispara run en Terraform Cloud via API y espera
-  # Terraform Cloud ejecuta el apply internamente usando sus variables/credenciales
-  # ===========================================================================
-  terraform-apply:
-    name: Terraform Apply (via Terraform Cloud)
-    runs-on: ubuntu-latest
-    needs: aprobacion-manual
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    steps:
-      - name: "Disparar Apply en Terraform Cloud y esperar resultado"
-        run: |
-          TF_TOKEN="${{ secrets.TF_API_TOKEN }}"
-          WS_ID="ws-WvCDrUj6ZALMCowC"
-          ORG="${{ env.TF_CLOUD_ORGANIZATION }}"
-          WS="${{ env.TF_WORKSPACE }}"
-
-          echo "Creando run de apply en Terraform Cloud..."
-
-          RUN_RESPONSE=$(curl -s \
-            --header "Authorization: Bearer ${TF_TOKEN}" \
-            --header "Content-Type: application/vnd.api+json" \
-            --request POST \
-            --data "{
-              \"data\": {
-                \"type\": \"runs\",
-                \"attributes\": {
-                  \"plan-only\": false,
-                  \"auto-apply\": true,
-                  \"message\": \"Apply - GitHub Actions commit ${{ github.sha }} - aprobado por ${{ github.actor }}\"
-                },
-                \"relationships\": {
-                  \"workspace\": {
-                    \"data\": { \"type\": \"workspaces\", \"id\": \"${WS_ID}\" }
-                  }
-                }
-              }
-            }" \
-            "https://app.terraform.io/api/v2/runs")
-
-          RUN_ID=$(echo "$RUN_RESPONSE" | jq -r '.data.id')
-
-          if [ "${RUN_ID}" = "null" ] || [ -z "${RUN_ID}" ]; then
-            echo "Error al crear el run: $RUN_RESPONSE"
-            exit 1
-          fi
-
-          echo "Run creado: https://app.terraform.io/app/${ORG}/workspaces/${WS}/runs/${RUN_ID}"
-
-          # Esperar resultado del apply (max 30 min)
-          MAX_WAIT=1800
-          ELAPSED=0
-          while [ $ELAPSED -lt $MAX_WAIT ]; do
-            STATUS=$(curl -s \
-              --header "Authorization: Bearer ${TF_TOKEN}" \
-              "https://app.terraform.io/api/v2/runs/${RUN_ID}" \
-              | jq -r '.data.attributes.status')
-
-            echo "Estado: ${STATUS} (${ELAPSED}s)"
-
-            case "${STATUS}" in
-              applied)
-                echo "✅ Apply completado: https://app.terraform.io/app/${ORG}/workspaces/${WS}/runs/${RUN_ID}"
-                exit 0 ;;
-              errored|canceled|force_canceled|discarded)
-                echo "❌ Apply fallido — estado: ${STATUS}"
-                echo "Ver detalles: https://app.terraform.io/app/${ORG}/workspaces/${WS}/runs/${RUN_ID}"
-                exit 1 ;;
-              *)
-                sleep 15
-                ELAPSED=$((ELAPSED + 15)) ;;
-            esac
-          done
-          echo "⏱️ Timeout esperando el apply"; exit 1
-
-  # ===========================================================================
-  # JOB 5: Notificación del resultado
+  # JOB 2: Notificación del resultado
   # ===========================================================================
   notificacion:
     name: Notificación del Resultado
     runs-on: ubuntu-latest
-    needs: [seguridad-y-validacion, terraform-plan, terraform-apply]
+    needs: seguridad-y-validacion
     if: always()
 
     steps:
@@ -302,10 +108,12 @@ jobs:
           echo "| Etapa | Estado |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Seguridad y Validación | ${{ needs.seguridad-y-validacion.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Terraform Plan | ${{ needs.terraform-plan.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Terraform Apply | ${{ needs.terraform-apply.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Repositorio:** cacorderob/ibm-techxchange-2026-hackathon" >> $GITHUB_STEP_SUMMARY
           echo "**Rama:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "**Ejecutado por:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Siguiente paso" >> $GITHUB_STEP_SUMMARY
+          echo "Ejecutar Plan y Apply desde Terraform Cloud:" >> $GITHUB_STEP_SUMMARY
+          echo "https://app.terraform.io/app/${{ env.TF_CLOUD_ORGANIZATION }}/workspaces/${{ env.TF_WORKSPACE }}" >> $GITHUB_STEP_SUMMARY
