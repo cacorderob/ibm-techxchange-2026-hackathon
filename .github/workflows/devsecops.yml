@@ -39,7 +39,6 @@ permissions:
 # Variables de entorno globales del workflow
 env:
   TF_WORKING_DIR: construccion/terraform
-  TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
 
 jobs:
   # ===========================================================================
@@ -79,6 +78,8 @@ jobs:
       # -----------------------------------------------------------------------
       - name: "Configurar Terraform"
         uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
 
       - name: "Validación de formato — terraform fmt"
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -95,6 +96,8 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
           terraform init -backend=false
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
 
       - name: "Validación de sintaxis — terraform validate"
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -127,12 +130,29 @@ jobs:
 
       - name: "Configurar Terraform"
         uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: "Escribir credenciales de Terraform Cloud"
+        run: |
+          mkdir -p $HOME/.terraform.d
+          cat > $HOME/.terraform.d/credentials.tfrc.json << 'EOF'
+          {
+            "credentials": {
+              "app.terraform.io": {
+                "token": "${{ secrets.TF_API_TOKEN }}"
+              }
+            }
+          }
+          EOF
 
       - name: "Inicializar Terraform"
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
           echo "Inicializando Terraform con backend en Terraform Cloud..."
           terraform init
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
 
       - name: "Terraform Plan"
         id: plan
@@ -144,6 +164,7 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
 
       # Publica el plan como comentario en el Pull Request
       - name: "Publicar plan en Pull Request"
@@ -196,12 +217,29 @@ jobs:
 
       - name: "Configurar Terraform"
         uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: "Escribir credenciales de Terraform Cloud"
+        run: |
+          mkdir -p $HOME/.terraform.d
+          cat > $HOME/.terraform.d/credentials.tfrc.json << 'EOF'
+          {
+            "credentials": {
+              "app.terraform.io": {
+                "token": "${{ secrets.TF_API_TOKEN }}"
+              }
+            }
+          }
+          EOF
 
       - name: "Inicializar Terraform"
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
           echo "Inicializando Terraform con backend en Terraform Cloud..."
           terraform init
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
 
       - name: "Terraform Apply"
         id: apply
@@ -213,6 +251,7 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
 
   # ===========================================================================
   # JOB 5: Notificación del resultado
